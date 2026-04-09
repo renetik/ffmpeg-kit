@@ -1,109 +1,200 @@
 Renetik Android Build Notes
 ===========================
 
-This file documents the exact setup that was needed to build this ffmpeg-kit
-checkout successfully on this machine as it exists now.
+This file documents the current known manual process to rebuild the Android
+ffmpeg-kit AAR from this repository state.
 
-Environment
------------
+This is only documentation of the current state. It is not a claim that the
+overall ffmpeg-kit Android integration is fully modernized. The point here is:
 
-- Machine: Apple Silicon MacBook (arm64)
-- macOS: Darwin 25.x
-- Repo path used for the successful build:
-  `/Users/renetik/Documents/Development/renetik/ffmpeg-kit`
+1. reproduce the current Android build
+2. keep the build compatible with 16 KB native page-size requirements
+3. document the exact external versions that were needed
 
-What Was Required
+Current Repo State
+------------------
+
+This repository now contains the linker change required for 16 KB native ELF
+alignment on this older NDK line:
+
+- `scripts/function-android.sh`
+
+The current repo build was verified to produce Android `.so` files with
+`LOAD ... Align 0x4000` for:
+
+- `armeabi-v7a`
+- `arm64-v8a`
+- `x86`
+- `x86_64`
+
+This includes both:
+
+- `libffmpegkit.so`
+- `libc++_shared.so`
+
+Important Scope Note
+--------------------
+
+This README documents how to build the library itself.
+
+This does **not** finish the app-side packaging work for Google Play. The app
+that consumes this AAR still needs correct Android packaging for 16 KB devices.
+At the time of writing, that means the consuming Android app should use a
+modern Android Gradle Plugin setup, or otherwise package JNI libraries in a
+16 KB-safe way.
+
+Normal Build Process Only
+-------------------------
+
+During automated/sandboxed work, temporary paths and Gradle-home overrides were
+used only to bypass sandbox restrictions.
+
+Those temporary workarounds are **not** part of the normal build instructions.
+
+The normal intended process is:
+
+- install the needed tools normally on the machine
+- install the required Android SDK components normally
+- download the required Android CI NDK build manually
+- unpack it to a stable local path
+- point `ANDROID_NDK_ROOT` at that stable path
+- run `./android.sh`
+
+Host Requirements
 -----------------
 
-1. Homebrew tools had to be installed:
+Machine:
 
-   - `pkg-config`
-   - `cmake`
-   - `ninja`
-   - `meson`
-   - `nasm`
-   - `autoconf`
-   - `automake`
-   - `libtool`
-   - `gperf`
-   - `openjdk@17`
+- Apple Silicon Mac
 
-2. Android SDK CMake had to be `3.22.1`.
+Operating assumptions:
 
-   Important:
-   ffmpeg-kit's Android scripts look for CMake inside
-   `ANDROID_SDK_ROOT/cmake/...` before checking `PATH`.
+- macOS
+- Rosetta installed
 
-   CMake 4 caused `cpu-features` to fail.
+The build scripts already handle Apple Silicon by using the NDK
+`darwin-x86_64` host toolchain where needed. Rosetta still needs to be
+available on the machine.
 
-   The working SDK CMake was:
+Homebrew Packages
+-----------------
 
-   `/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin/cmake`
+Install these packages with Homebrew:
 
-3. Android NDK had to be `25.1.8937393`.
+- `pkg-config`
+- `cmake`
+- `ninja`
+- `meson`
+- `nasm`
+- `autoconf`
+- `automake`
+- `libtool`
+- `gperf`
+- `openjdk@17`
 
-   The current/latest NDK 29 did not work with this repo as-is because the
-   scripts still rely on older NDK path/layout assumptions.
-
-   Working NDK:
-
-   `/tmp/android-ndk-r25b`
-
-   with:
-
-   `Pkg.Revision = 25.1.8937393`
-
-4. Java had to be JDK 17.
-
-   Working JDK:
-
-   `/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
-
-5. Rosetta compatibility was still needed on Apple Silicon.
-
-   This repo already handles that in its Android build scripts by selecting the
-   `darwin-x86_64` NDK host toolchain on arm64 macOS.
-
-Important Build Behavior
+Android SDK Requirements
 ------------------------
 
-- `src/*` contains downloaded/upstream nested repositories used by the build.
-  These are not part of the top-level repo history.
-- The build also generates ignored outputs under:
-  - `.tmp/`
-  - `prebuilt/`
-  - `android/libs/`
-  - `android/obj/`
-  - `android/ffmpeg-kit-android-lib/build/`
-- Some IDEs may still show those generated/nested-repo files even though the
-  top-level repository is clean.
+The build worked with:
 
-Recovered Working Build Variant
--------------------------------
+- Android SDK platform `android-33`
+- Android SDK build-tools `33.0.1`
+- Android SDK CMake `3.22.1`
 
-This was the successful Android package variant recovered from the previous
-build log and then rebuilt successfully:
+Important:
+
+ffmpeg-kit's Android scripts look for CMake inside
+`ANDROID_SDK_ROOT/cmake/...` before checking `PATH`.
+
+CMake 4 previously caused `cpu-features` to fail in this project. Keep SDK
+CMake `3.22.1` installed and visible to the build.
+
+The working SDK CMake path was:
+
+`/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin/cmake`
+
+Java Requirement
+----------------
+
+Use JDK 17.
+
+The working JDK path on this machine was:
+
+`/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
+
+Android NDK Requirement For 16 KB Support
+-----------------------------------------
+
+Do **not** use the stable SDK-manager NDK r25 package for this 16 KB build.
+
+Why:
+
+- this repo still depends on the older NDK layout and was not moved to NDK 29
+- stable NDK `25.1.8937393` produced a 4 KB `libc++_shared.so`
+- for 16 KB support on this old NDK line, the build needed an Android CI canary
+  NDK package that already contains a 16 KB-aligned `libc++_shared.so`
+
+Use this Android CI build:
+
+- Branch:
+  `aosp-ndk-r25-release`
+- Build:
+  `12161346`
+- Artifact:
+  `android-ndk-12161346-darwin-x86_64.zip`
+- Extracted folder name:
+  `android-ndk-r25d-canary`
+
+The Android CI page used for this was:
+
+`https://ci.android.com/builds/branches/aosp-ndk-r25-release/grid?head=12161346&tail=12161346&legacy=1`
+
+Manual download process:
+
+1. Open the CI page above.
+2. Open the `darwin_mac` target for build `12161346`.
+3. Download artifact `android-ndk-12161346-darwin-x86_64.zip`.
+4. Unzip it.
+5. Move the extracted `android-ndk-r25d-canary` folder to a stable local path.
+
+Recommended stable install path:
+
+`$HOME/Library/Android/ndk/android-ndk-r25d-canary`
+
+Example:
+
+```sh
+mkdir -p "$HOME/Library/Android/ndk"
+mv android-ndk-r25d-canary "$HOME/Library/Android/ndk/"
+```
+
+Build Variant
+-------------
+
+This was the Android package variant rebuilt successfully:
 
 `--enable-lame --enable-opus --enable-gpl --enable-rubberband --disable-lib-x264 --disable-lib-x265 --disable-lib-xvidcore --disable-lib-libvidstab`
 
-Because this checkout already contained stale prebuilt/pkg-config data from a
-different machine/path, the successful rebuild also forced regeneration of the
-enabled dependency outputs:
+Because this checkout had already been built on another machine/path before,
+the successful rebuild also forced regeneration of the enabled dependency
+outputs:
 
 `--rebuild-cpu-features --rebuild-lame --rebuild-libiconv --rebuild-libsndfile --rebuild-libsamplerate --rebuild-opus --rebuild-rubberband`
 
-Exact Successful Command
-------------------------
+Normal Build Command
+--------------------
 
-Run from the repo root:
+Run from the repo root.
+
+Replace the NDK path below if you install it somewhere else.
 
 ```sh
-export ANDROID_SDK_ROOT=/Users/renetik/Library/Android/sdk
-export ANDROID_HOME=/Users/renetik/Library/Android/sdk
-export ANDROID_NDK_ROOT=/tmp/android-ndk-r25b
-export ANDROID_NDK=/tmp/android-ndk-r25b
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-export PATH="/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/libtool/libexec/gnubin:/opt/homebrew/bin:$PATH"
+export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_NDK_ROOT="$HOME/Library/Android/ndk/android-ndk-r25d-canary"
+export ANDROID_NDK="$HOME/Library/Android/ndk/android-ndk-r25d-canary"
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+export PATH="$HOME/Library/Android/sdk/cmake/3.22.1/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/libtool/libexec/gnubin:/opt/homebrew/bin:$PATH"
 
 ./android.sh \
   --rebuild-cpu-features \
@@ -123,24 +214,54 @@ export PATH="/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin:/opt/homebrew/o
   --disable-lib-libvidstab
 ```
 
-Build Result
-------------
+Expected Output
+---------------
 
-Successful output AAR:
+Main output AAR:
 
 - `prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar`
 
-Gradle output copy:
+Gradle output:
 
 - `android/ffmpeg-kit-android-lib/build/outputs/aar/ffmpeg-kit-release.aar`
+
+16 KB Verification
+------------------
+
+After the build, verify at least the arm64 libraries.
+
+Example:
+
+```sh
+"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
+  android/libs/arm64-v8a/libffmpegkit.so
+
+"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
+  android/libs/arm64-v8a/libc++_shared.so
+```
+
+Expected result:
+
+- all `LOAD` segments should show `Align 0x4000`
+
+It is also reasonable to verify the AAR itself:
+
+```sh
+unzip -p android/ffmpeg-kit-android-lib/build/outputs/aar/ffmpeg-kit-release.aar \
+  jni/arm64-v8a/libffmpegkit.so > /tmp/libffmpegkit.so
+
+"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
+  /tmp/libffmpegkit.so
+```
 
 Notes
 -----
 
-- If `tools/android/.gradle/` appears as unversioned in IDEs, that is local
-  Gradle cache noise and not part of the intended source changes.
-- If SDK CMake 4 is installed and visible to the script, `cpu-features` may
-  fail again. Keep SDK CMake `3.22.1` as the active/available SDK CMake for
-  this build.
-- If switching machines or paths, forcing rebuild of the enabled dependencies
-  is safer than reusing old `prebuilt/*` metadata.
+- `src/*` contains downloaded/upstream nested repositories used by the build.
+  They are not part of the top-level repo history.
+- The build generates outputs under `.tmp/`, `prebuilt/`, `android/libs/`,
+  `android/obj/`, and `android/ffmpeg-kit-android-lib/build/`.
+- Some IDEs may still show generated files or nested repos under `src/*`.
+- `tools/android/.gradle/` is local IDE/Gradle cache noise.
+- If switching machines or build paths, forcing rebuild of the enabled
+  dependencies is safer than trying to reuse old `prebuilt/*` metadata.
