@@ -1,0 +1,146 @@
+Renetik Android Build Notes
+===========================
+
+This file documents the exact setup that was needed to build this ffmpeg-kit
+checkout successfully on this machine as it exists now.
+
+Environment
+-----------
+
+- Machine: Apple Silicon MacBook (arm64)
+- macOS: Darwin 25.x
+- Repo path used for the successful build:
+  `/Users/renetik/Documents/Development/renetik/ffmpeg-kit`
+
+What Was Required
+-----------------
+
+1. Homebrew tools had to be installed:
+
+   - `pkg-config`
+   - `cmake`
+   - `ninja`
+   - `meson`
+   - `nasm`
+   - `autoconf`
+   - `automake`
+   - `libtool`
+   - `gperf`
+   - `openjdk@17`
+
+2. Android SDK CMake had to be `3.22.1`.
+
+   Important:
+   ffmpeg-kit's Android scripts look for CMake inside
+   `ANDROID_SDK_ROOT/cmake/...` before checking `PATH`.
+
+   CMake 4 caused `cpu-features` to fail.
+
+   The working SDK CMake was:
+
+   `/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin/cmake`
+
+3. Android NDK had to be `25.1.8937393`.
+
+   The current/latest NDK 29 did not work with this repo as-is because the
+   scripts still rely on older NDK path/layout assumptions.
+
+   Working NDK:
+
+   `/tmp/android-ndk-r25b`
+
+   with:
+
+   `Pkg.Revision = 25.1.8937393`
+
+4. Java had to be JDK 17.
+
+   Working JDK:
+
+   `/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
+
+5. Rosetta compatibility was still needed on Apple Silicon.
+
+   This repo already handles that in its Android build scripts by selecting the
+   `darwin-x86_64` NDK host toolchain on arm64 macOS.
+
+Important Build Behavior
+------------------------
+
+- `src/*` contains downloaded/upstream nested repositories used by the build.
+  These are not part of the top-level repo history.
+- The build also generates ignored outputs under:
+  - `.tmp/`
+  - `prebuilt/`
+  - `android/libs/`
+  - `android/obj/`
+  - `android/ffmpeg-kit-android-lib/build/`
+- Some IDEs may still show those generated/nested-repo files even though the
+  top-level repository is clean.
+
+Recovered Working Build Variant
+-------------------------------
+
+This was the successful Android package variant recovered from the previous
+build log and then rebuilt successfully:
+
+`--enable-lame --enable-opus --enable-gpl --enable-rubberband --disable-lib-x264 --disable-lib-x265 --disable-lib-xvidcore --disable-lib-libvidstab`
+
+Because this checkout already contained stale prebuilt/pkg-config data from a
+different machine/path, the successful rebuild also forced regeneration of the
+enabled dependency outputs:
+
+`--rebuild-cpu-features --rebuild-lame --rebuild-libiconv --rebuild-libsndfile --rebuild-libsamplerate --rebuild-opus --rebuild-rubberband`
+
+Exact Successful Command
+------------------------
+
+Run from the repo root:
+
+```sh
+export ANDROID_SDK_ROOT=/Users/renetik/Library/Android/sdk
+export ANDROID_HOME=/Users/renetik/Library/Android/sdk
+export ANDROID_NDK_ROOT=/tmp/android-ndk-r25b
+export ANDROID_NDK=/tmp/android-ndk-r25b
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+export PATH="/Users/renetik/Library/Android/sdk/cmake/3.22.1/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/libtool/libexec/gnubin:/opt/homebrew/bin:$PATH"
+
+./android.sh \
+  --rebuild-cpu-features \
+  --rebuild-lame \
+  --rebuild-libiconv \
+  --rebuild-libsndfile \
+  --rebuild-libsamplerate \
+  --rebuild-opus \
+  --rebuild-rubberband \
+  --enable-lame \
+  --enable-opus \
+  --enable-gpl \
+  --enable-rubberband \
+  --disable-lib-x264 \
+  --disable-lib-x265 \
+  --disable-lib-xvidcore \
+  --disable-lib-libvidstab
+```
+
+Build Result
+------------
+
+Successful output AAR:
+
+- `prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar`
+
+Gradle output copy:
+
+- `android/ffmpeg-kit-android-lib/build/outputs/aar/ffmpeg-kit-release.aar`
+
+Notes
+-----
+
+- If `tools/android/.gradle/` appears as unversioned in IDEs, that is local
+  Gradle cache noise and not part of the intended source changes.
+- If SDK CMake 4 is installed and visible to the script, `cpu-features` may
+  fail again. Keep SDK CMake `3.22.1` as the active/available SDK CMake for
+  this build.
+- If switching machines or paths, forcing rebuild of the enabled dependencies
+  is safer than reusing old `prebuilt/*` metadata.
