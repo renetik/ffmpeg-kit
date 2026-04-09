@@ -19,6 +19,8 @@
 
 package com.arthenica.ffmpegkit;
 
+import static com.arthenica.ffmpegkit.SessionState.COMPLETED;
+
 import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -1132,6 +1134,19 @@ public class FFmpegKitConfig {
         }
     }
 
+    public static void clearCompletedSessions() {
+        synchronized (sessionHistoryLock) {
+            ArrayList<Session> completedSessions = new ArrayList<>();
+            for (Session session : sessionHistoryList) {
+                if (session.getState() == COMPLETED) completedSessions.add(session);
+            }
+            for (Session session : completedSessions) {
+                sessionHistoryMap.remove(session.getSessionId());
+                sessionHistoryList.remove(session);
+            }
+        }
+    }
+
     /**
      * Returns the session specified with <code>sessionId</code> from the session history.
      *
@@ -1169,7 +1184,7 @@ public class FFmpegKitConfig {
         synchronized (sessionHistoryLock) {
             for (int i = sessionHistoryList.size() - 1; i >= 0; i--) {
                 final Session session = sessionHistoryList.get(i);
-                if (session.getState() == SessionState.COMPLETED) {
+                if (session.getState() == COMPLETED) {
                     return session;
                 }
             }
