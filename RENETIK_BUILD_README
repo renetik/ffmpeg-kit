@@ -2,14 +2,17 @@ Renetik Android Build Notes
 ===========================
 
 This file documents the current known manual process to rebuild the Android
-ffmpeg-kit AAR from this repository state.
+ffmpeg-kit native libraries from this repository state. The app packages them
+from `android/libs` through its `:ffmpeg-kit-android` module, so no AAR is
+built.
 
 This is only documentation of the current state. It is not a claim that the
 overall ffmpeg-kit Android integration is fully modernized. The point here is:
 
 1. reproduce the current Android build
-2. keep the build compatible with 16 KB native page-size requirements
-3. document the exact external versions that were needed
+2. keep the FFmpeg libraries licensed LGPL 2.1 or later
+3. keep the build compatible with 16 KB native page-size requirements
+4. document the exact external versions that were needed
 
 Current Repo State
 ------------------
@@ -27,21 +30,44 @@ The current repo build was verified to produce Android `.so` files with
 - `x86`
 - `x86_64`
 
-This includes both:
+This includes every `.so` in `android/libs`, among them `libffmpegkit.so` and
+`libc++_shared.so`.
 
-- `libffmpegkit.so`
-- `libc++_shared.so`
+The Android build leaves the tracked
+`android/ffmpeg-kit-android-lib/build.gradle` as it is. It takes `sdk_version`
+and `min_sdk_version` from the app project that includes the module.
+
+Licence
+-------
+
+The Android build passes neither `--enable-gpl` nor `--enable-version3` to
+FFmpeg's configure, so FFmpeg's own libraries (`libavutil`, `libavcodec`,
+`libavformat`, `libavfilter`, `libavdevice`, `libswresample`, `libswscale`)
+are licensed LGPL version 2.1 or later. Nothing enabled needs more:
+
+- lame and libiconv are LGPL
+- opus, libogg and libvorbis are BSD
+- cpu-features (Apache 2.0) links only into `libffmpegkit_abidetect.so`, not
+  into FFmpeg's libraries
+
+Rubber Band and the other GPL libraries (x264, x265, xvidcore, vidstab) are not
+built. The app stretches samples with its own Rubber Band build instead.
+
+FFmpegKit's own wrapper libraries and Java API stay LGPL 3.0 under `LICENSE`.
 
 Important Scope Note
 --------------------
 
-This README documents how to build the library itself.
+This README documents how to build the native libraries themselves.
 
-This does **not** finish the app-side packaging work for Google Play. The app
-that consumes this AAR still needs correct Android packaging for 16 KB devices.
-At the time of writing, that means the consuming Android app should use a
-modern Android Gradle Plugin setup, or otherwise package JNI libraries in a
-16 KB-safe way.
+The app packages `android/libs` through its `:ffmpeg-kit-android` module, and
+it must keep packaging JNI libraries in a 16 KB-safe way, as a modern Android
+Gradle Plugin setup does.
+
+`android/libs` and the licence files in
+`android/ffmpeg-kit-android-lib/src/main/res/raw` are ignored by git, so the
+rebuilt libraries exist only on the machine that built them. Build releases on
+that machine, or rebuild on any other machine that builds releases.
 
 Normal Build Process Only
 -------------------------
@@ -106,8 +132,19 @@ Important:
 ffmpeg-kit's Android scripts look for CMake inside
 `ANDROID_SDK_ROOT/cmake/...` before checking `PATH`.
 
-CMake 4 previously caused `cpu-features` to fail in this project. Keep SDK
-CMake `3.22.1` installed and visible to the build.
+CMake 4 fails to configure `cpu-features` ("Compatibility with CMake < 3.5 has
+been removed"). Keep SDK CMake `3.22.1` installed. The scripts take the first
+`cmake` they find under `ANDROID_SDK_ROOT/cmake` (`android_ndk_cmake` in
+`scripts/function-android.sh`), not the one on `PATH`, so when a CMake 4 is
+installed there as well, export `CMAKE_POLICY_VERSION_MINIMUM=3.5` before
+building.
+
+A Safari-downloaded NDK carries the quarantine flag, and macOS then refuses to
+load its toolchain libraries. Clear it once after unpacking:
+
+```sh
+xattr -dr com.apple.quarantine "$HOME/Library/Android/ndk/android-ndk-r25d-canary"
+```
 
 The working SDK CMake path was:
 
@@ -116,7 +153,8 @@ The working SDK CMake path was:
 Java Requirement
 ----------------
 
-Use JDK 17.
+Use JDK 17. With `--no-archive` Gradle does not run, so any JDK, such as Android
+Studio's bundled one, is enough.
 
 The working JDK path on this machine was:
 
@@ -171,15 +209,16 @@ mv android-ndk-r25d-canary "$HOME/Library/Android/ndk/"
 Build Variant
 -------------
 
-This was the Android package variant rebuilt successfully:
+The Android variant enables the encoders the app's audio formats use, lame
+(MP3), opus and libvorbis (Ogg Vorbis, which also builds libogg); lame enables
+libiconv:
 
-`--enable-lame --enable-opus --enable-gpl --enable-rubberband --disable-lib-x264 --disable-lib-x265 --disable-lib-xvidcore --disable-lib-libvidstab`
+`--no-archive --enable-lame --enable-opus --enable-libvorbis`
 
-Because this checkout had already been built on another machine/path before,
-the successful rebuild also forced regeneration of the enabled dependency
-outputs:
+Because this checkout may have been built on another machine/path before, the
+build also forces regeneration of the enabled dependency outputs:
 
-`--rebuild-cpu-features --rebuild-lame --rebuild-libiconv --rebuild-libsndfile --rebuild-libsamplerate --rebuild-opus --rebuild-rubberband`
+`--rebuild-cpu-features --rebuild-lame --rebuild-libiconv --rebuild-opus --rebuild-libogg --rebuild-libvorbis`
 
 Normal Build Command
 --------------------
@@ -195,63 +234,72 @@ export ANDROID_NDK_ROOT="$HOME/Library/Android/ndk/android-ndk-r25d-canary"
 export ANDROID_NDK="$HOME/Library/Android/ndk/android-ndk-r25d-canary"
 export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
 export PATH="$HOME/Library/Android/sdk/cmake/3.22.1/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/libtool/libexec/gnubin:/opt/homebrew/bin:$PATH"
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
-./android.sh \
+./android.sh --no-archive \
   --rebuild-cpu-features \
   --rebuild-lame \
   --rebuild-libiconv \
-  --rebuild-libsndfile \
-  --rebuild-libsamplerate \
   --rebuild-opus \
-  --rebuild-rubberband \
+  --rebuild-libogg \
+  --rebuild-libvorbis \
   --enable-lame \
   --enable-opus \
-  --enable-gpl \
-  --enable-rubberband \
-  --disable-lib-x264 \
-  --disable-lib-x265 \
-  --disable-lib-xvidcore \
-  --disable-lib-libvidstab
+  --enable-libvorbis
 ```
+
+If the build fails, `build.log` says why.
 
 Expected Output
 ---------------
 
-Main output AAR:
+Native libraries, which the app's `:ffmpeg-kit-android` module packages:
 
-- `prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar`
+- `android/libs/armeabi-v7a/` (with `*_neon.so` variants)
+- `android/libs/arm64-v8a/`
+- `android/libs/x86/`
+- `android/libs/x86_64/`
 
-Gradle output:
+Licence files, which the app packages from the module's resources:
 
-- `android/ffmpeg-kit-android-lib/build/outputs/aar/ffmpeg-kit-release.aar`
+- `android/ffmpeg-kit-android-lib/src/main/res/raw/`
 
-16 KB Verification
-------------------
+No AAR is built.
 
-After the build, verify at least the arm64 libraries.
+Verification
+------------
 
-Example:
+Run from the repo root after the build:
 
 ```sh
-"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
-  android/libs/arm64-v8a/libffmpegkit.so
-
-"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
-  android/libs/arm64-v8a/libc++_shared.so
+READELF="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf"
+for lib in android/libs/*/libavutil*.so; do echo "$lib"; strings "$lib" | grep "license:"; strings "$lib" | grep -- "--prefix="; done
+for lib in android/libs/*/libavfilter*.so; do echo "$lib $(strings "$lib" | grep -ci rubberband)"; done
+for lib in android/libs/*/*.so; do echo "$lib $("$READELF" -lW "$lib" | awk '/LOAD/{print $NF}' | sort -u | tr '\n' ' ')"; done
+ls android/ffmpeg-kit-android-lib/src/main/res/raw
+git diff --exit-code android/ffmpeg-kit-android-lib/build.gradle
 ```
 
 Expected result:
 
-- all `LOAD` segments should show `Align 0x4000`
+- every `libavutil.so`, and armeabi-v7a's `libavutil_neon.so`, reports
+  `libavutil license: LGPL version 2.1 or later`
+- each configuration line has `--enable-libmp3lame`, `--enable-libopus`,
+  `--enable-libvorbis` and `--enable-iconv`, and has neither `--enable-gpl`,
+  `--enable-version3` nor `--enable-librubberband`
+- each `libavfilter*.so` rubberband count is 0
+- every `.so` shows only `0x4000`, the 16 KB alignment of its `LOAD` segments
+- `res/raw` holds exactly `license.txt` (FFmpegKit's LGPL 3.0 `LICENSE`),
+  `source.txt`, `license_cpu_features.txt`, `license_lame.txt`,
+  `license_libiconv.txt`, `license_libogg.txt`, `license_libvorbis.txt` and
+  `license_opus.txt`; the build clears the folder before copying
+- `build.gradle` has no diff
 
-It is also reasonable to verify the AAR itself:
+Before uploading a release, check that its bundle packages the rebuilt FFmpeg;
+the line reads `LGPL version 2.1 or later`:
 
 ```sh
-unzip -p android/ffmpeg-kit-android-lib/build/outputs/aar/ffmpeg-kit-release.aar \
-  jni/arm64-v8a/libffmpegkit.so > /tmp/libffmpegkit.so
-
-"$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" -l \
-  /tmp/libffmpegkit.so
+unzip -p <release-bundle>.aab base/lib/arm64-v8a/libavutil.so | strings | grep "license:"
 ```
 
 Notes
@@ -260,7 +308,7 @@ Notes
 - `src/*` contains downloaded/upstream nested repositories used by the build.
   They are not part of the top-level repo history.
 - The build generates outputs under `.tmp/`, `prebuilt/`, `android/libs/`,
-  `android/obj/`, and `android/ffmpeg-kit-android-lib/build/`.
+  `android/obj/`, and `android/ffmpeg-kit-android-lib/src/main/res/raw/`.
 - Some IDEs may still show generated files or nested repos under `src/*`.
 - `tools/android/.gradle/` is local IDE/Gradle cache noise.
 - If switching machines or build paths, forcing rebuild of the enabled

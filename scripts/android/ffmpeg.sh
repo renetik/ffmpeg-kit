@@ -419,7 +419,6 @@ fi
   --sysroot="${ANDROID_SYSROOT}" \
   --prefix="${FFMPEG_LIBRARY_PATH}" \
   --pkg-config="${HOST_PKG_CONFIG_PATH}" \
-  --enable-version3 \
   --arch="${TARGET_ARCH}" \
   --cpu="${TARGET_CPU}" \
   --target-os=android \

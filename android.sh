@@ -35,14 +35,12 @@ BUILD_TYPE_ID=""
 BUILD_VERSION=$(git describe --tags --always 2>>"${BASEDIR}"/build.log)
 
 # PROCESS LTS BUILD OPTION FIRST AND SET BUILD TYPE: MAIN OR LTS
-rm -f "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
-cp "${BASEDIR}"/tools/android/build.gradle "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
+# android/ffmpeg-kit-android-lib/build.gradle is kept as tracked; it takes its SDK versions from
+# the app project that includes it.
 for argument in "$@"; do
   if [[ "$argument" == "-l" ]] || [[ "$argument" == "--lts" ]]; then
     enable_lts_build
     BUILD_TYPE_ID+="LTS "
-    rm -f "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
-    cp "${BASEDIR}"/tools/android/build.lts.gradle "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
   fi
 done
 
@@ -173,10 +171,6 @@ if [[ -n ${DISPLAY_HELP} ]]; then
   display_help
   exit 0
 fi
-
-# SET API LEVEL IN build.gradle
-${SED_INLINE} "s/minSdkVersion .*/minSdkVersion ${API}/g" "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
-${SED_INLINE} "s/versionCode ..0/versionCode ${API}0/g" "${BASEDIR}"/android/ffmpeg-kit-android-lib/build.gradle 1>>"${BASEDIR}"/build.log 2>&1
 
 echo -e "\nBuilding ffmpeg-kit ${BUILD_TYPE_ID}library for Android\n"
 echo -e -n "INFO: Building ffmpeg-kit ${BUILD_VERSION} ${BUILD_TYPE_ID}library for Android: " 1>>"${BASEDIR}"/build.log 2>&1
